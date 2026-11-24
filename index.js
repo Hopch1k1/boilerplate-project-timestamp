@@ -1,32 +1,21 @@
-// index.js
-// where your node app starts
+const http = require('node:http');
+const { Readable } = require('node:stream');
+const { pipeline } = require('node:stream/promises');
 
-// init project
-var express = require('express');
-var app = express();
-
-// enable CORS (https://en.wikipedia.org/wiki/Cross-origin_resource_sharing)
-// so that your API is remotely testable by FCC 
-var cors = require('cors');
-app.use(cors({optionsSuccessStatus: 200}));  // some legacy browsers choke on 204
-
-// http://expressjs.com/en/starter/static-files.html
-app.use(express.static('public'));
-
-// http://expressjs.com/en/starter/basic-routing.html
-app.get("/", function (req, res) {
-  res.sendFile(__dirname + '/views/index.html');
-});
-
-
-// your first API endpoint... 
-app.get("/api/hello", function (req, res) {
-  res.json({greeting: 'hello API'});
-});
-
-
-
-// Listen on port set in environment variable or default to 3000
-var listener = app.listen(process.env.PORT || 3000, function () {
-  console.log('Your app is listening on port ' + listener.address().port);
+import('./proxy.mjs').then(({ proxy }) => {
+  http.createServer(async (req, res) => {
+    if (!req.url.startsWith('/')) {
+      res.writeHead(400).end();
+      return;
+    }
+    const body = ['GET', 'HEAD'].includes(req.method) ? undefined : req;
+    const response = await proxy(req.url, req.method, new Headers(req.headers), body);
+    res.writeHead(response.status, Object.fromEntries(response.headers));
+    if (!response.body) return res.end();
+    try {
+      await pipeline(Readable.fromWeb(response.body), res);
+    } catch {
+      res.destroy();
+    }
+  }).listen(process.env.PORT || 3000);
 });
